@@ -155,5 +155,7 @@ public class ContractLineItemServiceImpl implements ContractLineItemService {
 
         contract.setGrossValue(grossValue);
         contract.setNetValue(netValue);
+        contract.setApprovedBy(null);
+        contract.setApprovedAt(null);
     }
 }

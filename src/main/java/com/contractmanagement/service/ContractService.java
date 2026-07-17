@@ -11,4 +11,8 @@ public interface ContractService {
     ContractResponse getContract(Long id);
     void deleteContract(Long id);
     List<ContractResponse> getAllContracts();
+    ContractResponse submitContract(Long id);
+    ContractResponse approveContract(Long id, com.contractmanagement.dto.request.ApprovalRequest request);
+    ContractResponse activateContract(Long id);
+    ContractResponse terminateContract(Long id, com.contractmanagement.dto.request.TerminateRequest request);
 }

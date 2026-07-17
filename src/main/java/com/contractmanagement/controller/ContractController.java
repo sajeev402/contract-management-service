@@ -1,6 +1,8 @@
 package com.contractmanagement.controller;
 
+import com.contractmanagement.dto.request.ApprovalRequest;
 import com.contractmanagement.dto.request.CreateContractRequest;
+import com.contractmanagement.dto.request.TerminateRequest;
 import com.contractmanagement.dto.request.UpdateContractRequest;
 import com.contractmanagement.dto.response.ContractResponse;
 import com.contractmanagement.service.ContractService;
@@ -83,5 +85,51 @@ public class ContractController {
     })
     public ResponseEntity<List<ContractResponse>> getAllContracts() {
         return ResponseEntity.ok(contractService.getAllContracts());
+    }
+
+    @PostMapping("/{id}/submit")
+    @Operation(summary = "Submit a contract for approval or activation")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Contract submitted successfully"),
+            @ApiResponse(responseCode = "404", description = "Contract not found"),
+            @ApiResponse(responseCode = "422", description = "Business rule violation")
+    })
+    public ResponseEntity<ContractResponse> submitContract(@PathVariable Long id) {
+        return ResponseEntity.ok(contractService.submitContract(id));
+    }
+
+    @PostMapping("/{id}/approve")
+    @Operation(summary = "Approve a contract")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Contract approved successfully"),
+            @ApiResponse(responseCode = "400", description = "Invalid input"),
+            @ApiResponse(responseCode = "404", description = "Contract not found"),
+            @ApiResponse(responseCode = "422", description = "Business rule violation")
+    })
+    public ResponseEntity<ContractResponse> approveContract(@PathVariable Long id, @Valid @RequestBody ApprovalRequest request) {
+        return ResponseEntity.ok(contractService.approveContract(id, request));
+    }
+
+    @PostMapping("/{id}/activate")
+    @Operation(summary = "Activate a contract")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Contract activated successfully"),
+            @ApiResponse(responseCode = "404", description = "Contract not found"),
+            @ApiResponse(responseCode = "422", description = "Business rule violation")
+    })
+    public ResponseEntity<ContractResponse> activateContract(@PathVariable Long id) {
+        return ResponseEntity.ok(contractService.activateContract(id));
+    }
+
+    @PostMapping("/{id}/terminate")
+    @Operation(summary = "Terminate an active contract")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Contract terminated successfully"),
+            @ApiResponse(responseCode = "400", description = "Invalid input"),
+            @ApiResponse(responseCode = "404", description = "Contract not found"),
+            @ApiResponse(responseCode = "422", description = "Business rule violation")
+    })
+    public ResponseEntity<ContractResponse> terminateContract(@PathVariable Long id, @Valid @RequestBody TerminateRequest request) {
+        return ResponseEntity.ok(contractService.terminateContract(id, request));
     }
 }
