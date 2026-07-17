@@ -6,6 +6,7 @@ import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.dao.InvalidDataAccessApiUsageException;
 import java.time.OffsetDateTime;
 import java.util.List;
 
@@ -53,8 +54,40 @@ public class GlobalExceptionHandler {
         return new ResponseEntity<>(errorResponse, HttpStatus.BAD_REQUEST);
     }
 
+    @ExceptionHandler(IllegalArgumentException.class)
+    public ResponseEntity<ErrorResponse> handleIllegalArgumentException(IllegalArgumentException ex) {
+        ErrorResponse errorResponse = new ErrorResponse(
+                "BAD_REQUEST",
+                ex.getMessage(),
+                null,
+                OffsetDateTime.now()
+        );
+        return new ResponseEntity<>(errorResponse, HttpStatus.BAD_REQUEST);
+    }
+
+    @ExceptionHandler(InvalidDataAccessApiUsageException.class)
+    public ResponseEntity<ErrorResponse> handleInvalidDataAccessApiUsageException(InvalidDataAccessApiUsageException ex) {
+        ErrorResponse errorResponse = new ErrorResponse(
+                "INVALID_DATA_ACCESS",
+                ex.getMessage(),
+                null,
+                OffsetDateTime.now()
+        );
+        return new ResponseEntity<>(errorResponse, HttpStatus.BAD_REQUEST);
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ErrorResponse> handleGlobalException(Exception ex) {
+        if ("PropertyReferenceException".equals(ex.getClass().getSimpleName())) {
+            ErrorResponse errorResponse = new ErrorResponse(
+                    "INVALID_SORT_PROPERTY",
+                    ex.getMessage(),
+                    null,
+                    OffsetDateTime.now()
+            );
+            return new ResponseEntity<>(errorResponse, HttpStatus.BAD_REQUEST);
+        }
+        
         ErrorResponse errorResponse = new ErrorResponse(
                 "INTERNAL_SERVER_ERROR",
                 "An unexpected error occurred",

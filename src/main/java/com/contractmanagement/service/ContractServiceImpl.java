@@ -7,13 +7,19 @@ import com.contractmanagement.dto.request.UpdateContractRequest;
 import com.contractmanagement.dto.response.ContractResponse;
 import com.contractmanagement.entity.Contract;
 import com.contractmanagement.entity.ContractApproval;
+import com.contractmanagement.entity.ContractLineItem;
 import com.contractmanagement.enums.ContractStatus;
+import com.contractmanagement.enums.ContractType;
 import com.contractmanagement.exception.BusinessException;
 import com.contractmanagement.exception.ResourceNotFoundException;
 import com.contractmanagement.mapper.ContractMapper;
 import com.contractmanagement.repository.ContractApprovalRepository;
 import com.contractmanagement.repository.ContractRepository;
+import com.contractmanagement.repository.ContractSpecification;
 import com.contractmanagement.util.ContractNumberGenerator;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -22,6 +28,7 @@ import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -38,6 +45,10 @@ public class ContractServiceImpl implements ContractService {
         this.contractRepository = contractRepository;
         this.contractApprovalRepository = contractApprovalRepository;
         this.contractMapper = contractMapper;
+    }
+
+    private void applyExpirations() {
+        contractRepository.expireContracts(LocalDate.now(), OffsetDateTime.now());
     }
 
     @Override
@@ -100,7 +111,7 @@ public class ContractServiceImpl implements ContractService {
     }
 
     @Override
-    @Transactional(readOnly = true)
+    @Transactional
     public ContractResponse getContract(Long id) {
         return contractMapper.toResponse(getContractEntity(id));
     }
@@ -118,12 +129,21 @@ public class ContractServiceImpl implements ContractService {
     }
 
     @Override
-    @Transactional(readOnly = true)
+    @Transactional
     public List<ContractResponse> getAllContracts() {
+        applyExpirations();
         return contractRepository.findAll().stream()
                 .filter(c -> !Boolean.TRUE.equals(c.getDeleted()))
                 .map(contractMapper::toResponse)
                 .collect(Collectors.toList());
+    }
+
+    @Override
+    @Transactional
+    public Page<ContractResponse> searchContracts(ContractStatus status, String customerReference, ContractType contractType, BigDecimal minimumNetValue, BigDecimal maximumNetValue, LocalDate startDateFrom, LocalDate startDateTo, LocalDate endDateFrom, LocalDate endDateTo, Pageable pageable) {
+        applyExpirations();
+        Specification<Contract> spec = ContractSpecification.withFilters(status, customerReference, contractType, minimumNetValue, maximumNetValue, startDateFrom, startDateTo, endDateFrom, endDateTo);
+        return contractRepository.findAll(spec, pageable).map(contractMapper::toResponse);
     }
 
     @Override
@@ -212,6 +232,88 @@ public class ContractServiceImpl implements ContractService {
         return contractMapper.toResponse(contractRepository.save(contract));
     }
 
+    @Override
+    @Transactional
+    public ContractResponse renewContract(Long id) {
+        Contract parentContract = getContractEntity(id);
+        
+        // Ensure parent has not already been renewed (only once)
+        boolean hasChild = contractRepository.findAll().stream().anyMatch(c -> c.getParentContract() != null && c.getParentContract().getId().equals(parentContract.getId()));
+        if (hasChild) {
+            throw new BusinessException("This contract has already been renewed.");
+        }
+        
+        LocalDate now = LocalDate.now();
+        boolean isEligible = false;
+        
+        if (parentContract.getStatus() == ContractStatus.ACTIVE) {
+            long daysToEnd = ChronoUnit.DAYS.between(now, parentContract.getEndDate());
+            if (daysToEnd <= 90) {
+                isEligible = true;
+            }
+        } else if (parentContract.getStatus() == ContractStatus.EXPIRED) {
+            long daysSinceEnd = ChronoUnit.DAYS.between(parentContract.getEndDate(), now);
+            if (daysSinceEnd <= 30) {
+                isEligible = true;
+            }
+        }
+        
+        if (!isEligible) {
+            throw new BusinessException("Contract is not eligible for renewal.");
+        }
+        
+        long termDays = ChronoUnit.DAYS.between(parentContract.getStartDate(), parentContract.getEndDate());
+        LocalDate newStartDate = parentContract.getEndDate().plusDays(1);
+        LocalDate newEndDate = newStartDate.plusDays(termDays);
+        
+        Contract newContract = new Contract();
+        int randomSeq = (int) (Math.random() * 90000) + 10000;
+        newContract.setContractNumber(ContractNumberGenerator.generate(randomSeq));
+        newContract.setCustomerReference(parentContract.getCustomerReference());
+        newContract.setTitle(parentContract.getTitle() + " (Renewal)");
+        newContract.setContractType(parentContract.getContractType());
+        newContract.setStartDate(newStartDate);
+        newContract.setEndDate(newEndDate);
+        newContract.setCurrency(parentContract.getCurrency());
+        newContract.setPaymentTerms(parentContract.getPaymentTerms());
+        newContract.setStatus(ContractStatus.DRAFT);
+        newContract.setParentContract(parentContract);
+        newContract.setGrossValue(parentContract.getGrossValue());
+        newContract.setNetValue(parentContract.getNetValue());
+        
+        List<ContractLineItem> newItems = new ArrayList<>();
+        for (ContractLineItem oldItem : parentContract.getLineItems()) {
+            ContractLineItem newItem = new ContractLineItem();
+            newItem.setContract(newContract);
+            newItem.setProductCode(oldItem.getProductCode());
+            newItem.setDescription(oldItem.getDescription());
+            newItem.setQuantity(oldItem.getQuantity());
+            newItem.setUnitPrice(oldItem.getUnitPrice());
+            newItem.setDiscountPercentage(oldItem.getDiscountPercentage());
+            newItem.setLineTotal(oldItem.getLineTotal());
+            newItems.add(newItem);
+        }
+        newContract.setLineItems(newItems);
+        
+        Contract savedContract = contractRepository.save(newContract);
+        return contractMapper.toResponse(savedContract);
+    }
+
+    @Override
+    @Transactional
+    public List<ContractResponse> getExpiringContracts(int days) {
+        applyExpirations();
+        LocalDate targetDate = LocalDate.now().plusDays(days);
+        Specification<Contract> spec = (root, query, cb) -> cb.and(
+                cb.isFalse(root.get("deleted")),
+                cb.equal(root.get("status"), ContractStatus.ACTIVE),
+                cb.lessThanOrEqualTo(root.get("endDate"), targetDate)
+        );
+        return contractRepository.findAll(spec).stream()
+                .map(contractMapper::toResponse)
+                .collect(Collectors.toList());
+    }
+
     private boolean requiresApproval(Contract contract) {
         if (contract.getGrossValue() == null || contract.getGrossValue().compareTo(BigDecimal.ZERO) == 0) {
             return false;
@@ -234,6 +336,7 @@ public class ContractServiceImpl implements ContractService {
     }
 
     private Contract getContractEntity(Long id) {
+        applyExpirations();
         return contractRepository.findById(id)
                 .filter(c -> !Boolean.TRUE.equals(c.getDeleted()))
                 .orElseThrow(() -> new ResourceNotFoundException("Contract not found with id: " + id));

@@ -5,12 +5,18 @@ import com.contractmanagement.dto.request.CreateContractRequest;
 import com.contractmanagement.dto.request.TerminateRequest;
 import com.contractmanagement.dto.request.UpdateContractRequest;
 import com.contractmanagement.dto.response.ContractResponse;
+import com.contractmanagement.enums.ContractStatus;
+import com.contractmanagement.enums.ContractType;
 import com.contractmanagement.service.ContractService;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import org.springdoc.core.annotations.ParameterObject;
 import jakarta.validation.Valid;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -20,8 +26,11 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.List;
 
 @RestController
@@ -79,12 +88,46 @@ public class ContractController {
     }
 
     @GetMapping
-    @Operation(summary = "Get all contracts")
+    @Operation(summary = "Get all contracts with optional filtering and pagination")
     @ApiResponses(value = {
             @ApiResponse(responseCode = "200", description = "Contracts retrieved successfully")
     })
-    public ResponseEntity<List<ContractResponse>> getAllContracts() {
-        return ResponseEntity.ok(contractService.getAllContracts());
+    public ResponseEntity<Page<ContractResponse>> getAllContracts(
+            @Parameter(description = "Contract status") @RequestParam(required = false) ContractStatus status,
+            @Parameter(description = "Customer reference") @RequestParam(required = false) String customerReference,
+            @Parameter(description = "Contract type") @RequestParam(required = false) ContractType contractType,
+            @Parameter(description = "Minimum net value") @RequestParam(required = false) BigDecimal minimumNetValue,
+            @Parameter(description = "Maximum net value") @RequestParam(required = false) BigDecimal maximumNetValue,
+            @Parameter(description = "Start date from") @RequestParam(required = false) LocalDate startDateFrom,
+            @Parameter(description = "Start date to") @RequestParam(required = false) LocalDate startDateTo,
+            @Parameter(description = "End date from") @RequestParam(required = false) LocalDate endDateFrom,
+            @Parameter(description = "End date to") @RequestParam(required = false) LocalDate endDateTo,
+            @ParameterObject Pageable pageable) {
+        
+        return ResponseEntity.ok(contractService.searchContracts(
+                status, customerReference, contractType, minimumNetValue, maximumNetValue,
+                startDateFrom, startDateTo, endDateFrom, endDateTo, pageable));
+    }
+
+    @GetMapping("/expiring")
+    @Operation(summary = "Get expiring contracts")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Expiring contracts retrieved successfully")
+    })
+    public ResponseEntity<List<ContractResponse>> getExpiringContracts(
+            @Parameter(description = "Number of days") @RequestParam(defaultValue = "30") int days) {
+        return ResponseEntity.ok(contractService.getExpiringContracts(days));
+    }
+
+    @PostMapping("/{id}/renew")
+    @Operation(summary = "Renew an eligible contract")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Contract renewed successfully"),
+            @ApiResponse(responseCode = "404", description = "Contract not found"),
+            @ApiResponse(responseCode = "422", description = "Business rule violation")
+    })
+    public ResponseEntity<ContractResponse> renewContract(@PathVariable Long id) {
+        return ResponseEntity.ok(contractService.renewContract(id));
     }
 
     @PostMapping("/{id}/submit")
