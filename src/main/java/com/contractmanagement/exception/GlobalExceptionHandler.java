@@ -32,7 +32,7 @@ public class GlobalExceptionHandler {
                 null,
                 OffsetDateTime.now()
         );
-        return new ResponseEntity<>(errorResponse, HttpStatus.UNPROCESSABLE_ENTITY);
+        return ResponseEntity.status(HttpStatus.valueOf(422)).body(errorResponse);
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
